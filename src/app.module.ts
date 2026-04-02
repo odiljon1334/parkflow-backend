@@ -6,6 +6,7 @@ import { RegionsModule } from './regions/regions.module'
 import { ParkingsModule } from './parkings/parkings.module'
 import { PricingModule } from './pricing/pricing.module'
 import { VehiclesModule } from './vehicles/vehicles.module'
+import { CamerasModule } from './cameras/cameras.module'
 import { WebhookModule } from './webhook/webhook.module'
 import { ReportsModule } from './reports/reports.module'
 import { GatewayModule } from './gateway/gateway.module'
@@ -20,6 +21,7 @@ import { TelegramModule } from './telegram/telegram.module'
     ParkingsModule,
     PricingModule,
     VehiclesModule,
+    CamerasModule,
     WebhookModule,
     ReportsModule,
     GatewayModule,
