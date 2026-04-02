@@ -1,0 +1,149 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  SUPER_ADMIN
+  REGION_ADMIN
+  OPERATOR
+}
+
+enum CameraType {
+  ENTRY
+  EXIT
+}
+
+enum VehicleStatus {
+  INSIDE
+  EXITED
+}
+
+enum EntryMethod {
+  AUTO
+  MANUAL
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+}
+
+// ─── Models ──────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(uuid())
+  name         String
+  username     String   @unique
+  passwordHash String
+  role         Role     @default(OPERATOR)
+
+  regionId     String?
+  region       Region?  @relation(fields: [regionId], references: [id])
+
+  parkingId    String?
+  parking      Parking? @relation(fields: [parkingId], references: [id])
+
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
+model Region {
+  id        String    @id @default(uuid())
+  name      String
+  users     User[]
+  parkings  Parking[]
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@map("regions")
+}
+
+model Parking {
+  id           String         @id @default(uuid())
+  name         String
+  address      String?
+  regionId     String
+  region       Region         @relation(fields: [regionId], references: [id])
+  cameras      Camera[]
+  vehicles     Vehicle[]
+  pricingTiers PricingTier[]
+  users        User[]
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  @@map("parkings")
+}
+
+model Camera {
+  id        String     @id @default(uuid())
+  name      String
+  type      CameraType
+  ipAddress String?
+  parkingId String
+  parking   Parking    @relation(fields: [parkingId], references: [id])
+  createdAt DateTime   @default(now())
+
+  @@map("cameras")
+}
+
+// Narx jadvali — har bir parking uchun alohida
+model PricingTier {
+  id          String   @id @default(uuid())
+  parkingId   String
+  parking     Parking  @relation(fields: [parkingId], references: [id])
+
+  fromMinutes Int      // 0
+  toMinutes   Int?     // null = undan yuqori hammasi (∞)
+  price       Int      // so'mda
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("pricing_tiers")
+}
+
+model Vehicle {
+  id          String        @id @default(uuid())
+  plateNumber String
+  country     String        @default("UZ") // UZ, KG, KZ, RU, TM, TJ, UNKNOWN
+
+  entryTime   DateTime      @default(now())
+  exitTime    DateTime?
+  durationMin Int?          // daqiqalarda
+
+  status      VehicleStatus @default(INSIDE)
+  entryMethod EntryMethod   @default(AUTO)
+  exitMethod  EntryMethod?
+
+  amount      Int?          // hisoblangan to'lov
+
+  parkingId   String
+  parking     Parking       @relation(fields: [parkingId], references: [id])
+
+  payment     Payment?
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@map("vehicles")
+}
+
+model Payment {
+  id        String        @id @default(uuid())
+  vehicleId String        @unique
+  vehicle   Vehicle       @relation(fields: [vehicleId], references: [id])
+  amount    Int
+  method    PaymentMethod @default(CASH)
+  paidAt    DateTime      @default(now())
+
+  @@map("payments")
+}
