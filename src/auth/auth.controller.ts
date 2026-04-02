@@ -17,9 +17,11 @@ export class AuthController {
     return this.authService.login(dto)
   }
 
+  // SUPER_ADMIN — har qanday rol yarata oladi
+  // REGION_ADMIN — faqat PARKING_ADMIN va OPERATOR yarata oladi
   @Post('users')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(Role.SUPER_ADMIN)
+  @Roles(Role.SUPER_ADMIN, Role.REGION_ADMIN)
   createUser(@Body() dto: CreateUserDto) {
     return this.authService.createUser(dto)
   }
