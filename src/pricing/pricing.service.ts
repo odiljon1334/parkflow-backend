@@ -4,31 +4,59 @@ import { SetPricingDto } from './dto/set-pricing.dto'
 
 @Injectable()
 export class PricingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  async getTiers(parkingId: string) {
-    return this.prisma.pricingTier.findMany({
-      where: { parkingId },
-      orderBy: { fromMinutes: 'asc' },
+  // Parking ga biriktirilgan tarif qoidalarini olish
+  async getRulesByParking(parkingId: string) {
+    const parking = await this.prisma.parking.findUnique({
+      where:   { id: parkingId },
+      include: { tariffPlan: { include: { rules: { orderBy: { fromMinutes: 'asc' } } } } },
     })
+    if (!parking) throw new NotFoundException('Parking topilmadi')
+    return parking.tariffPlan?.rules ?? []
   }
 
-  // Barcha tierllarni o'chirib qaytadan saqlash (set operatsiyasi)
-  async setTiers(parkingId: string, dto: SetPricingDto) {
+  // Parking uchun yangi TariffPlan yaratish yoki yangilash
+  async setPlanForParking(parkingId: string, dto: SetPricingDto) {
     const parking = await this.prisma.parking.findUnique({ where: { id: parkingId } })
     if (!parking) throw new NotFoundException('Parking topilmadi')
 
-    await this.prisma.pricingTier.deleteMany({ where: { parkingId } })
+    // Eski planni o'chirish
+    if (parking.tariffPlanId) {
+      await this.prisma.tariffRule.deleteMany({ where: { tariffPlanId: parking.tariffPlanId } })
+      await this.prisma.tariffPlan.delete({ where: { id: parking.tariffPlanId } })
+    }
 
-    const tiers = await this.prisma.pricingTier.createMany({
-      data: dto.tiers.map((tier) => ({
-        parkingId,
-        fromMinutes: tier.fromMinutes,
-        toMinutes: tier.toMinutes ?? null,
-        price: tier.price,
-      })),
+    // Yangi plan + rullar
+    const plan = await this.prisma.tariffPlan.create({
+      data: {
+        name:  dto.name ?? `${parkingId} tarifi`,
+        rules: {
+          create: dto.tiers.map((tier, i) => ({
+            fromMinutes: tier.fromMinutes,
+            toMinutes:   tier.toMinutes ?? null,
+            price:       tier.price,
+            label:       tier.label ?? null,
+            sortOrder:   i,
+          })),
+        },
+      },
+      include: { rules: { orderBy: { fromMinutes: 'asc' } } },
     })
 
-    return this.getTiers(parkingId)
+    await this.prisma.parking.update({
+      where: { id: parkingId },
+      data:  { tariffPlanId: plan.id },
+    })
+
+    return plan
+  }
+
+  // Barcha tarif planlari (SuperAdmin)
+  async getAllPlans() {
+    return this.prisma.tariffPlan.findMany({
+      include: { rules: { orderBy: { fromMinutes: 'asc' } } },
+      orderBy: { createdAt: 'desc' },
+    })
   }
 }

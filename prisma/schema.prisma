@@ -12,6 +12,7 @@ datasource db {
 enum Role {
   SUPER_ADMIN
   REGION_ADMIN
+  PARKING_ADMIN
   OPERATOR
 }
 
@@ -20,130 +21,322 @@ enum CameraType {
   EXIT
 }
 
-enum VehicleStatus {
-  INSIDE
-  EXITED
+enum CameraStatus {
+  ONLINE
+  OFFLINE
+  UNKNOWN
 }
 
-enum EntryMethod {
-  AUTO
-  MANUAL
+enum SessionStatus {
+  ACTIVE     // Mashina ichkarida
+  CLOSED     // Normal chiqib ketdi
+  CANCELLED  // Bekor qilindi
+  LOST       // Chiqish bo'lmadi, admin yopdi
+  MANUAL     // Operator tomonidan yaratildi
+}
+
+enum PaymentStatus {
+  PAID
+  UNPAID
+  PENDING
 }
 
 enum PaymentMethod {
   CASH
   CARD
+  TRANSFER
+  FREE       // Whitelist / abonent
+}
+
+enum EntryMethod {
+  AUTO       // Kamera orqali
+  MANUAL     // Operator qo'lda kiritdi
+}
+
+enum SessionEventType {
+  ENTRY_CAPTURED
+  EXIT_CAPTURED
+  MANUAL_ENTRY
+  MANUAL_EXIT
+  PAYMENT_CONFIRMED
+  SESSION_CLOSED
+  SESSION_CANCELLED
+  PLATE_CORRECTED
+  PRICE_RECALCULATED
+}
+
+enum VehicleListType {
+  WHITELIST  // VIP, abonent — bepul yoki chegirmali
+  BLACKLIST  // Taqiqlangan
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  EXPORT
 }
 
 // ─── Models ──────────────────────────────────────────────────────────────────
 
 model User {
-  id           String   @id @default(uuid())
-  name         String
-  username     String   @unique
+  id           String        @id @default(uuid())
+  fullName     String
+  username     String        @unique
+  phone        String?
   passwordHash String
-  role         Role     @default(OPERATOR)
+  role         Role          @default(OPERATOR)
 
   regionId     String?
-  region       Region?  @relation(fields: [regionId], references: [id])
+  region       Region?       @relation(fields: [regionId], references: [id])
 
   parkingId    String?
-  parking      Parking? @relation(fields: [parkingId], references: [id])
+  parking      Parking?      @relation(fields: [parkingId], references: [id])
 
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  isActive     Boolean       @default(true)
+
+  auditLogs    AuditLog[]
+  telegramChat TelegramChat?
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@map("users")
 }
 
 model Region {
-  id        String    @id @default(uuid())
-  name      String
-  users     User[]
-  parkings  Parking[]
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
+  id       String    @id @default(uuid())
+  name     String
+  code     String?   @unique  // "TSH", "AND", "NAM"
+  isActive Boolean   @default(true)
+
+  users    User[]
+  parkings Parking[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("regions")
 }
 
 model Parking {
-  id           String         @id @default(uuid())
+  id           String           @id @default(uuid())
   name         String
   address      String?
+  capacity     Int?             // Jami joy soni
+  isActive     Boolean          @default(true)
+
   regionId     String
-  region       Region         @relation(fields: [regionId], references: [id])
+  region       Region           @relation(fields: [regionId], references: [id])
+
+  tariffPlanId String?
+  tariffPlan   TariffPlan?      @relation(fields: [tariffPlanId], references: [id])
+
   cameras      Camera[]
-  vehicles     Vehicle[]
-  pricingTiers PricingTier[]
+  sessions     VehicleSession[]
   users        User[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
 
   @@map("parkings")
 }
 
 model Camera {
-  id        String     @id @default(uuid())
-  name      String
-  type      CameraType
-  ipAddress String?
-  parkingId String
-  parking   Parking    @relation(fields: [parkingId], references: [id])
-  createdAt DateTime   @default(now())
+  id           String        @id @default(uuid())
+  name         String
+  type         CameraType
+  vendor       String        @default("HIKVISION")
+  ipAddress    String?
+  serialNumber String?
+  webhookKey   String?       // Webhook autentifikatsiya kaliti
+  status       CameraStatus  @default(UNKNOWN)
+  lastSeenAt   DateTime?     // Oxirgi faollik vaqti
+  isActive     Boolean       @default(true)
+
+  parkingId    String
+  parking      Parking       @relation(fields: [parkingId], references: [id])
+
+  entrySessions VehicleSession[] @relation("EntryCamera")
+  exitSessions  VehicleSession[] @relation("ExitCamera")
+
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@map("cameras")
 }
 
-// Narx jadvali — har bir parking uchun alohida
-model PricingTier {
-  id          String   @id @default(uuid())
-  parkingId   String
-  parking     Parking  @relation(fields: [parkingId], references: [id])
+// ─── Tarif ───────────────────────────────────────────────────────────────────
 
-  fromMinutes Int      // 0
-  toMinutes   Int?     // null = undan yuqori hammasi (∞)
-  price       Int      // so'mda
+model TariffPlan {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  isActive    Boolean      @default(true)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  rules       TariffRule[]
+  parkings    Parking[]
 
-  @@map("pricing_tiers")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@map("tariff_plans")
 }
 
-model Vehicle {
-  id          String        @id @default(uuid())
-  plateNumber String
-  country     String        @default("UZ") // UZ, KG, KZ, RU, TM, TJ, UNKNOWN
+model TariffRule {
+  id           String     @id @default(uuid())
+  tariffPlanId String
+  tariffPlan   TariffPlan @relation(fields: [tariffPlanId], references: [id], onDelete: Cascade)
 
-  entryTime   DateTime      @default(now())
-  exitTime    DateTime?
-  durationMin Int?          // daqiqalarda
+  fromMinutes  Int        // 0
+  toMinutes    Int?       // null = ∞
+  price        Int        // so'mda
+  label        String?    // "0-3 soat" — UI uchun
 
-  status      VehicleStatus @default(INSIDE)
-  entryMethod EntryMethod   @default(AUTO)
-  exitMethod  EntryMethod?
+  sortOrder    Int        @default(0)
 
-  amount      Int?          // hisoblangan to'lov
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
 
-  parkingId   String
-  parking     Parking       @relation(fields: [parkingId], references: [id])
+  @@map("tariff_rules")
+}
 
-  payment     Payment?
+// ─── Vehicle Session ─────────────────────────────────────────────────────────
 
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+model VehicleSession {
+  id              String         @id @default(uuid())
+  plateNumber     String
+  country         String         @default("UZ")
+  confidence      Float?         // Kamera tanish ishonchliligi 0–100
 
-  @@map("vehicles")
+  entryTime       DateTime       @default(now())
+  exitTime        DateTime?
+  durationMinutes Int?
+
+  status          SessionStatus  @default(ACTIVE)
+  entryMethod     EntryMethod    @default(AUTO)
+  exitMethod      EntryMethod?
+
+  totalAmount     Int?
+  paymentStatus   PaymentStatus  @default(UNPAID)
+
+  entryImageUrl   String?        // Kirish snapshot URL
+  exitImageUrl    String?        // Chiqish snapshot URL
+  note            String?        // Operator izohi
+
+  regionId        String?
+  parkingId       String
+  parking         Parking        @relation(fields: [parkingId], references: [id])
+
+  entryCameraId   String?
+  entryCamera     Camera?        @relation("EntryCamera", fields: [entryCameraId], references: [id])
+  exitCameraId    String?
+  exitCamera      Camera?        @relation("ExitCamera", fields: [exitCameraId], references: [id])
+
+  tariffPlanId    String?        // Qaysi tarif ishlatildi (snapshot)
+
+  payment         Payment?
+  events          SessionEvent[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([plateNumber])
+  @@index([parkingId, status])
+  @@index([entryTime])
+  @@map("vehicle_sessions")
 }
 
 model Payment {
-  id        String        @id @default(uuid())
-  vehicleId String        @unique
-  vehicle   Vehicle       @relation(fields: [vehicleId], references: [id])
+  id        String         @id @default(uuid())
+  sessionId String         @unique
+  session   VehicleSession @relation(fields: [sessionId], references: [id])
+
   amount    Int
-  method    PaymentMethod @default(CASH)
-  paidAt    DateTime      @default(now())
+  method    PaymentMethod  @default(CASH)
+  status    PaymentStatus  @default(PAID)
+  paidAt    DateTime       @default(now())
+  paidBy    String?        // Operator ID yoki "AUTO"
+  note      String?
 
   @@map("payments")
+}
+
+// ─── Session Events (Audit Trail) ────────────────────────────────────────────
+
+model SessionEvent {
+  id        String           @id @default(uuid())
+  sessionId String
+  session   VehicleSession   @relation(fields: [sessionId], references: [id])
+
+  type      SessionEventType
+  payload   Json?            // Raw event yoki o'zgarish ma'lumoti
+  createdBy String?          // Operator ID yoki "SYSTEM"
+
+  createdAt DateTime         @default(now())
+
+  @@map("session_events")
+}
+
+// ─── Whitelist / Blacklist ───────────────────────────────────────────────────
+
+model VehicleList {
+  id          String          @id @default(uuid())
+  plateNumber String
+  country     String          @default("UZ")
+  type        VehicleListType
+
+  parkingId   String?         // null = barcha parkinglar
+  regionId    String?         // null = barcha regionlar
+
+  discount    Int?            // % chegirma (Whitelist uchun)
+  note        String?
+  isActive    Boolean         @default(true)
+
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@unique([plateNumber, type, parkingId])
+  @@map("vehicle_list")
+}
+
+// ─── Telegram Bot ─────────────────────────────────────────────────────────────
+
+model TelegramChat {
+  id       String  @id @default(uuid())
+  chatId   String  @unique
+  username String?
+  isActive Boolean @default(true)
+
+  userId   String  @unique
+  user     User    @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@map("telegram_chats")
+}
+
+// ─── Audit Log ────────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id        String      @id @default(uuid())
+  userId    String?
+  user      User?       @relation(fields: [userId], references: [id])
+
+  action    AuditAction
+  entity    String      // "Parking", "TariffPlan", "VehicleSession"
+  entityId  String?
+  oldValue  Json?
+  newValue  Json?
+
+  ipAddress String?
+  userAgent String?
+
+  createdAt DateTime    @default(now())
+
+  @@index([userId])
+  @@index([entity, entityId])
+  @@map("audit_logs")
 }

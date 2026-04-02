@@ -8,6 +8,10 @@ export class CreateUserDto {
   @IsString()
   username: string
 
+  @IsOptional()
+  @IsString()
+  phone?: string
+
   @IsString()
   @MinLength(4)
   password: string

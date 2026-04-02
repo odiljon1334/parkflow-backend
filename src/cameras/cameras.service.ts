@@ -2,55 +2,41 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service'
 import { CreateCameraDto } from './dto/create-camera.dto'
 import { UpdateCameraDto } from './dto/update-camera.dto'
+import { CameraStatus } from '@prisma/client'
 
 @Injectable()
 export class CamerasService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  // Parking ga tegishli barcha kameralar
   async findAll(parkingId: string) {
     return this.prisma.camera.findMany({
-      where: { parkingId },
+      where:   { parkingId, isActive: true },
       orderBy: { createdAt: 'asc' },
     })
   }
 
   async findOne(id: string) {
     const camera = await this.prisma.camera.findUnique({
-      where: { id },
+      where:   { id },
       include: { parking: { include: { region: true } } },
     })
     if (!camera) throw new NotFoundException('Kamera topilmadi')
     return camera
   }
 
-  // cameraId orqali parking topish (webhook uchun)
+  // Webhook uchun — cameraId orqali parking topish
   async findParkingByCamera(cameraId: string) {
     const camera = await this.prisma.camera.findUnique({
-      where: { id: cameraId },
+      where:   { id: cameraId },
       include: { parking: true },
     })
-    if (!camera) throw new NotFoundException('Kamera topilmadi')
+    if (!camera) throw new NotFoundException(`Kamera topilmadi: ${cameraId}`)
     return camera
   }
 
   async create(dto: CreateCameraDto) {
-    // Parking mavjudligini tekshirish
-    const parking = await this.prisma.parking.findUnique({
-      where: { id: dto.parkingId },
-    })
+    const parking = await this.prisma.parking.findUnique({ where: { id: dto.parkingId } })
     if (!parking) throw new NotFoundException('Parking topilmadi')
-
-    // Bir parking da bir xil tipdan faqat bitta kamera bo'lishi kerak (ixtiyoriy cheklov)
-    // Agar bir nechta kirish kamerasi kerak bo'lsa bu checkni olib tashlash mumkin
-    const existing = await this.prisma.camera.findFirst({
-      where: { parkingId: dto.parkingId, type: dto.type },
-    })
-    if (existing) {
-      throw new BadRequestException(
-        `Bu parking da allaqachon ${dto.type} kamerasi mavjud: "${existing.name}"`,
-      )
-    }
 
     return this.prisma.camera.create({ data: dto })
   }
@@ -62,6 +48,34 @@ export class CamerasService {
 
   async remove(id: string) {
     await this.findOne(id)
-    return this.prisma.camera.delete({ where: { id } })
+    // Soft delete
+    return this.prisma.camera.update({ where: { id }, data: { isActive: false } })
+  }
+
+  // Webhook kelganda kamerani ONLINE deb belgilash
+  async markOnline(cameraId: string) {
+    return this.prisma.camera.update({
+      where: { id: cameraId },
+      data:  { status: CameraStatus.ONLINE, lastSeenAt: new Date() },
+    })
+  }
+
+  // Health check — 5 daqiqa ichida ping bo'lmagan kameralar OFFLINE
+  async checkOfflineCameras() {
+    const threshold = new Date(Date.now() - 5 * 60 * 1000)
+    return this.prisma.camera.updateMany({
+      where: {
+        status:    CameraStatus.ONLINE,
+        lastSeenAt: { lt: threshold },
+      },
+      data: { status: CameraStatus.OFFLINE },
+    })
+  }
+
+  async getCameraStatuses(parkingId: string) {
+    return this.prisma.camera.findMany({
+      where:  { parkingId, isActive: true },
+      select: { id: true, name: true, type: true, status: true, lastSeenAt: true },
+    })
   }
 }

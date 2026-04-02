@@ -8,25 +8,27 @@ import { CreateUserDto } from './dto/create-user.dto'
 @Injectable()
 export class AuthService {
   constructor(
-    private prisma: PrismaService,
-    private jwt: JwtService,
+    private readonly prisma: PrismaService,
+    private readonly jwt:    JwtService,
   ) {}
 
   async login(dto: LoginDto) {
     const user = await this.prisma.user.findUnique({
-      where: { username: dto.username },
+      where:   { username: dto.username },
       include: { region: true, parking: true },
     })
 
-    if (!user) throw new UnauthorizedException('Username yoki parol noto\'g\'ri')
+    if (!user || !user.isActive)
+      throw new UnauthorizedException('Username yoki parol noto\'g\'ri')
 
     const valid = await bcrypt.compare(dto.password, user.passwordHash)
-    if (!valid) throw new UnauthorizedException('Username yoki parol noto\'g\'ri')
+    if (!valid)
+      throw new UnauthorizedException('Username yoki parol noto\'g\'ri')
 
     const token = this.jwt.sign({
-      sub: user.id,
-      role: user.role,
-      regionId: user.regionId,
+      sub:       user.id,
+      role:      user.role,
+      regionId:  user.regionId,
       parkingId: user.parkingId,
     })
 
@@ -44,11 +46,12 @@ export class AuthService {
 
     const user = await this.prisma.user.create({
       data: {
-        name: dto.name,
-        username: dto.username,
+        fullName:  dto.name,
+        username:  dto.username,
+        phone:     dto.phone,
         passwordHash,
-        role: dto.role,
-        regionId: dto.regionId,
+        role:      dto.role,
+        regionId:  dto.regionId,
         parkingId: dto.parkingId,
       },
     })
@@ -57,9 +60,21 @@ export class AuthService {
     return result
   }
 
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } })
+    if (!user) throw new UnauthorizedException()
+
+    const valid = await bcrypt.compare(currentPassword, user.passwordHash)
+    if (!valid) throw new UnauthorizedException('Joriy parol noto\'g\'ri')
+
+    const passwordHash = await bcrypt.hash(newPassword, 10)
+    await this.prisma.user.update({ where: { id: userId }, data: { passwordHash } })
+    return { message: 'Parol muvaffaqiyatli o\'zgartirildi' }
+  }
+
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+      where:   { id: userId },
       include: { region: true, parking: true },
     })
     if (!user) throw new UnauthorizedException()

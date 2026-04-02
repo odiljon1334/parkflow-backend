@@ -1,4 +1,4 @@
-import { IsOptional, IsString } from 'class-validator'
+import { IsInt, IsOptional, IsString, Min } from 'class-validator'
 
 export class CreateParkingDto {
   @IsString()
@@ -10,4 +10,9 @@ export class CreateParkingDto {
 
   @IsString()
   regionId: string
+
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  capacity?: number
 }

@@ -9,17 +9,24 @@ import { Role } from '@prisma/client'
 @Controller('parkings/:parkingId/pricing')
 @UseGuards(JwtAuthGuard)
 export class PricingController {
-  constructor(private pricingService: PricingService) {}
+  constructor(private readonly pricingService: PricingService) {}
 
   @Get()
-  getTiers(@Param('parkingId') parkingId: string) {
-    return this.pricingService.getTiers(parkingId)
+  getRules(@Param('parkingId') parkingId: string) {
+    return this.pricingService.getRulesByParking(parkingId)
   }
 
   @Put()
   @UseGuards(RolesGuard)
-  @Roles(Role.SUPER_ADMIN, Role.REGION_ADMIN)
-  setTiers(@Param('parkingId') parkingId: string, @Body() dto: SetPricingDto) {
-    return this.pricingService.setTiers(parkingId, dto)
+  @Roles(Role.SUPER_ADMIN, Role.REGION_ADMIN, Role.PARKING_ADMIN)
+  setPlan(@Param('parkingId') parkingId: string, @Body() dto: SetPricingDto) {
+    return this.pricingService.setPlanForParking(parkingId, dto)
+  }
+
+  @Get('all')
+  @UseGuards(RolesGuard)
+  @Roles(Role.SUPER_ADMIN)
+  getAllPlans() {
+    return this.pricingService.getAllPlans()
   }
 }

@@ -15,4 +15,16 @@ export class ExitDto {
   @IsOptional()
   @IsEnum(PaymentMethod)
   paymentMethod?: PaymentMethod
+
+  @IsOptional()
+  @IsString()
+  cameraId?: string
+
+  @IsOptional()
+  @IsString()
+  exitImageUrl?: string
+
+  @IsOptional()
+  @IsString()
+  operatorId?: string
 }
