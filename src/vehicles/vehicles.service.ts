@@ -219,6 +219,26 @@ export class VehiclesService {
     })
   }
 
+  // ─── Bugungi statistika ───────────────────────────────────────────────────
+  async getStats(parkingId: string) {
+    const from = new Date(); from.setHours(0, 0, 0, 0)
+    const to   = new Date(); to.setHours(23, 59, 59, 999)
+
+    const [entryCount, exitCount, unpaidCount] = await Promise.all([
+      this.prisma.vehicleSession.count({
+        where: { parkingId, entryTime: { gte: from, lte: to } },
+      }),
+      this.prisma.vehicleSession.count({
+        where: { parkingId, status: SessionStatus.CLOSED, exitTime: { gte: from, lte: to } },
+      }),
+      this.prisma.vehicleSession.count({
+        where: { parkingId, paymentStatus: PaymentStatus.UNPAID, status: { not: SessionStatus.ACTIVE } },
+      }),
+    ])
+
+    return { entryCount, exitCount, unpaidCount }
+  }
+
   // ─── Private ──────────────────────────────────────────────────────────────
   private async broadcastCount(parkingId: string) {
     const count = await this.prisma.vehicleSession.count({

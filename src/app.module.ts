@@ -11,6 +11,7 @@ import { WebhookModule } from './webhook/webhook.module'
 import { ReportsModule } from './reports/reports.module'
 import { GatewayModule } from './gateway/gateway.module'
 import { TelegramModule } from './telegram/telegram.module'
+import { AuditModule } from './audit/audit.module'
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { TelegramModule } from './telegram/telegram.module'
     ReportsModule,
     GatewayModule,
     TelegramModule,
+    AuditModule,
   ],
 })
 export class AppModule {}

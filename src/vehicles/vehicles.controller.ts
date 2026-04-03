@@ -25,6 +25,12 @@ export class VehiclesController {
     return this.vehiclesService.previewPrice(parkingId, plate)
   }
 
+  // Bugungi statistika
+  @Get('stats')
+  getStats(@Query('parkingId') parkingId: string) {
+    return this.vehiclesService.getStats(parkingId)
+  }
+
   // To'lanmagan sessionlar
   @Get('unpaid')
   getUnpaid(@Query('parkingId') parkingId: string) {

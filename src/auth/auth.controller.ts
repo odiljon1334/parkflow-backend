@@ -26,6 +26,13 @@ export class AuthController {
     return this.authService.createUser(dto)
   }
 
+  @Get('users')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(Role.SUPER_ADMIN, Role.REGION_ADMIN)
+  getUsers(@CurrentUser() user: any) {
+    return this.authService.getUsers(user.role, user.regionId)
+  }
+
   @Get('me')
   @UseGuards(JwtAuthGuard)
   getMe(@CurrentUser() user: any) {

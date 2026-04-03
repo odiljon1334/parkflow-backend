@@ -72,6 +72,23 @@ export class AuthService {
     return { message: 'Parol muvaffaqiyatli o\'zgartirildi' }
   }
 
+  async getUsers(callerRole: string, callerRegionId?: string) {
+    const where: any = {}
+    if (callerRole === 'REGION_ADMIN' && callerRegionId) {
+      where.regionId = callerRegionId
+    }
+    return this.prisma.user.findMany({
+      where,
+      select: {
+        id: true, fullName: true, username: true, phone: true,
+        role: true, isActive: true, createdAt: true,
+        region:  { select: { id: true, name: true } },
+        parking: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+  }
+
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
       where:   { id: userId },
